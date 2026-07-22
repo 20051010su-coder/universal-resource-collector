@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UVWHD资源采集助手</title><link rel="stylesheet" href="styles.css"></head>
+<body><header class="topbar"><div><h1>UVWHD资源采集助手</h1><p>全站采集 · 分类整理 · 转存结果合并</p></div><button id="openData" class="secondary">打开数据目录</button></header>
+<main>
+  <section class="panel source-panel">
+    <div class="section-head"><div><h3>通用网站采集</h3><p>输入公开网站首页、栏目页或列表页。程序会自动发现详情页；识别不准时可用网页点选器保存专用规则。</p></div><button id="openDesigner" class="secondary">打开网页点选器</button></div>
+    <div class="source-grid">
+      <label class="wide">采集网址<input id="startUrl" type="url" placeholder="https://dyyjv.com/" value="https://dyyjv.com/"></label>
+      <label>速度模式<select id="speedMode"><option value="fast">极速模式</option><option value="stable" selected>稳定断点模式</option><option value="custom">自定义模式</option></select></label>
+      <label>网盘模式<select id="linkMode"><option value="all">保留全部网盘</option><option value="xunlei_first">迅雷优先</option><option value="selected">指定网盘（多选）</option></select></label>
+    </div>
+    <div id="driveChoices" class="drive-choices"><label><input type="checkbox" value="迅雷" checked>迅雷</label><label><input type="checkbox" value="夸克" checked>夸克</label><label><input type="checkbox" value="百度" checked>百度</label><label><input type="checkbox" value="阿里云盘" checked>阿里云盘</label><label><input type="checkbox" value="UC" checked>UC</label><label><input type="checkbox" value="115" checked>115</label><label><input type="checkbox" value="天翼云盘" checked>天翼云盘</label></div>
+    <div class="actions left"><button id="applyTask">应用网址并清空当前任务</button><span id="ruleStatus" class="muted">已预置 UVWHD 与 dyyjv.com 规则</span></div>
+  </section>
+  <section class="notice"><strong>工作边界</strong><span>本工具只读取公开网页并整理链接，不登录或操作迅雷网盘。请仅处理你有权保存和分享的内容。</span></section>
+  <section class="panel hero"><div><div class="eyebrow">采集任务</div><h2 id="statusTitle">尚未开始</h2><p id="statusDetail">程序会先扫描所有栏目分页，再逐篇获取迅雷主链接。</p></div><div class="actions"><button id="start">开始 / 继续采集</button><button id="pause" class="secondary">暂停</button><button id="stop" class="secondary">停止</button><button id="retry" class="secondary">重试失败项</button></div></section>
+  <section class="stats">
+    <article><span>已发现文章</span><b id="discovered">0</b></article><article><span>已处理</span><b id="completed">0</b></article><article><span>含主链文章</span><b id="withLinks">0</b></article><article><span>唯一迅雷链接</span><b id="links">0</b></article><article><span>无主链</span><b id="noLinks">0</b></article><article><span>失败</span><b id="failed">0</b></article>
+  </section>
+  <section class="grid">
+    <article class="panel"><div class="section-head"><div><h3>栏目进度</h3><p>同一文章在多栏目中出现时只采集一次。</p></div></div><div id="categories" class="category-list"><div class="empty">开始后显示栏目进度</div></div></article>
+    <article class="panel"><div class="section-head"><div><h3>采集速度</h3><p>延迟越大对来源站压力越小。</p></div></div><label>文章间隔（毫秒）<input id="articleDelay" type="number" min="300" max="10000" step="100" value="650"></label><label>分页间隔（毫秒）<input id="listDelay" type="number" min="100" max="5000" step="50" value="250"></label><button id="saveSettings" class="secondary">保存速度设置</button><hr><button id="reset" class="danger">清空当前采集记录</button></article>
+  </section>
+  <section class="panel"><div class="section-head"><div><h3>分类配置</h3><p>可任意新增、重命名或删除目标分类，并设置每个 UVWHD 栏目的归属。保存后已采集数据会立即重新归类。</p></div><button id="addCategory" class="secondary">新增目标分类</button></div><div id="targetCategories" class="target-categories"></div><div class="mapping-box"><h4>来源栏目映射</h4><div id="categoryMappings" class="mapping-grid"></div><label>标题命中动漫、动画、国漫或剧场版时归入<select id="animationTarget"></select></label></div><button id="saveCategories">保存分类配置</button></section>
+  <section class="panel"><div class="section-head"><div><h3>导出与合并</h3><p>按顺序完成三步，第二步在“云链批量管家”中执行。</p></div></div><div class="workflow"><div><span>1</span><h4>导出采集结果</h4><p>保存总表和按当前配置生成的分类转存链接 TXT。</p><button id="exportMaster">导出采集总表</button><button id="exportLinks" class="secondary">导出分类转存链接</button></div><div><span>2</span><h4>云链批量管家</h4><p>导入 TXT，完成转存与重新分享，再导出完整 Excel。</p></div><div><span>3</span><h4>合并并生成藏知库文件</h4><p>按原链接恢复标准资源名和分类。</p><button id="mergeResults">选择转存 Excel 并合并</button></div></div></section>
+  <section class="panel"><div class="section-head"><div><h3>最近处理</h3><p id="lastError"></p></div></div><div class="table-wrap"><table><thead><tr><th>状态</th><th>标准资源名</th><th>来源栏目</th><th>藏知库分类</th><th>链接数</th><th>文章编号</th></tr></thead><tbody id="rows"><tr><td colspan="6" class="empty">暂无记录</td></tr></tbody></table></div></section>
+</main><div id="toast" role="status"></div><script src="renderer.js"></script></body></html>
