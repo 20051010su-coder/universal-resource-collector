@@ -89,7 +89,7 @@ class Collector {
     const worker = async () => { while (cursor < queue.length && !this.stopRequested) {
       const article = queue[cursor++]; await this.waitWhilePaused(); if (this.stopRequested) return;
       article.status = 'running'; article.attempts = (article.attempts || 0) + 1; this.emit();
-      try { const html = await fetchText(article.articleUrl, profile.retries, profile.timeoutMs); const parsed = generic ? extractGenericArticle(html, article, article.sourceCategory, this.state.task.linkMode) : extractArticle(html, article, this.state.categoryConfig); Object.assign(article, parsed, { status: parsed.links.length ? 'success' : 'no_links', error: '', collectedAt: new Date().toISOString() }); }
+      try { const html = await fetchText(article.articleUrl, profile.retries, profile.timeoutMs); const parsed = generic ? extractGenericArticle(html, article, article.sourceCategory, this.state.task.linkMode, this.state.categoryConfig) : extractArticle(html, article, this.state.categoryConfig); Object.assign(article, parsed, { status: parsed.links.length ? 'success' : 'no_links', error: '', collectedAt: new Date().toISOString() }); }
       catch (error) { article.status = 'failed'; article.error = error.message; }
       this.recalculate(); this.save(); this.emit(); if (profile.articleDelayMs) await sleep(profile.articleDelayMs);
     }};

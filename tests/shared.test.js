@@ -25,7 +25,7 @@ test('解析文章并过滤推广链接', () => {
   assert.equal(parsed.standardTitle, '揭秘日'); assert.equal(parsed.links.length, 1); assert.match(parsed.links[0].originalUrl, /MAIN123/);
 });
 
-test('动画内容单独归类', () => assert.equal(targetCategory('喜剧片', '2026年动画电影《测试》'), '动漫动画合集'));
+test('动画内容单独归类', () => assert.equal(targetCategory('喜剧片', '2026年动画电影《测试》'), '动漫&动画'));
 
 test('自定义分类可任意映射并重新归类', () => {
   const config = normalizeCategoryConfig({ targets: ['影视总类', '动画专区'], mappings: { '44': '影视总类' }, animationTarget: '动画专区' });

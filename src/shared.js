@@ -14,9 +14,14 @@ const CATEGORY_MAP = {
   '46': { source: '热门短剧', target: '电视剧大全' }
 };
 const DEFAULT_CATEGORY_CONFIG = {
-  targets: ['电影电视剧', '动漫动画合集', '纪录片'],
-  mappings: Object.fromEntries(Object.entries(CATEGORY_MAP).map(([id, item]) => [id, item.source === '纪录片' ? '纪录片' : '电影电视剧'])),
-  animationTarget: '动漫动画合集'
+  targets: ['电影', '电视剧', '纪录片', '动漫&动画'],
+  mappings: Object.fromEntries(Object.entries(CATEGORY_MAP).map(([id, item]) => [
+    id,
+    item.source === '纪录片' ? '纪录片' : ['电视剧', '热门短剧'].includes(item.source) ? '电视剧' : '电影'
+  ])),
+  siteMappings: {},
+  animationTarget: '动漫&动画',
+  pendingCategory: '待分类'
 };
 
 function decodeEntities(value = '') {
@@ -59,23 +64,59 @@ function cleanTitle(raw = '') {
 }
 
 function normalizeCategoryConfig(config) {
-  const targets = [...new Set((config?.targets || DEFAULT_CATEGORY_CONFIG.targets).map(value => String(value).trim()).filter(Boolean))];
+  const oldDefaultTargets = ['电影电视剧', '动漫动画合集', '纪录片'];
+  const shouldMigrateOldDefault = oldDefaultTargets.every(name => config?.targets?.includes(name))
+    && config?.targets?.length === oldDefaultTargets.length;
+  const effectiveConfig = shouldMigrateOldDefault ? {
+    ...config,
+    targets: DEFAULT_CATEGORY_CONFIG.targets,
+    mappings: DEFAULT_CATEGORY_CONFIG.mappings,
+    animationTarget: DEFAULT_CATEGORY_CONFIG.animationTarget
+  } : config;
+  const targets = [...new Set((effectiveConfig?.targets || DEFAULT_CATEGORY_CONFIG.targets).map(value => String(value).trim()).filter(Boolean))];
   if (!targets.length) return structuredClone(DEFAULT_CATEGORY_CONFIG);
   const fallback = targets[0];
-  const mappings = Object.fromEntries(Object.keys(CATEGORY_MAP).map(id => [id, targets.includes(config?.mappings?.[id]) ? config.mappings[id] : fallback]));
-  return { targets, mappings, animationTarget: targets.includes(config?.animationTarget) ? config.animationTarget : fallback };
+  const mappings = Object.fromEntries(Object.keys(CATEGORY_MAP).map(id => [id, targets.includes(effectiveConfig?.mappings?.[id]) ? effectiveConfig.mappings[id] : DEFAULT_CATEGORY_CONFIG.mappings[id] || fallback]));
+  const siteMappings = {};
+  for (const [site, sourceMap] of Object.entries(effectiveConfig?.siteMappings || {})) {
+    const normalizedSite = String(site || '').trim().toLowerCase();
+    if (!normalizedSite || !sourceMap || typeof sourceMap !== 'object') continue;
+    siteMappings[normalizedSite] = {};
+    for (const [source, target] of Object.entries(sourceMap)) {
+      const normalizedSource = String(source || '').trim();
+      if (normalizedSource && targets.includes(target)) siteMappings[normalizedSite][normalizedSource] = target;
+    }
+  }
+  return {
+    targets,
+    mappings,
+    siteMappings,
+    animationTarget: targets.includes(effectiveConfig?.animationTarget) ? effectiveConfig.animationTarget : DEFAULT_CATEGORY_CONFIG.animationTarget,
+    pendingCategory: '待分类'
+  };
 }
 
-function targetCategory(sourceCategory, title = '', config = DEFAULT_CATEGORY_CONFIG, categoryId = '') {
+function articleSite(article = {}) {
+  try { return new URL(article.articleUrl || '').hostname.toLowerCase(); } catch { return String(article.sourceSite || '').toLowerCase(); }
+}
+
+function targetCategory(sourceCategory, title = '', config = DEFAULT_CATEGORY_CONFIG, categoryId = '', sourceSite = '') {
   const normalized = normalizeCategoryConfig(config);
-  if (/动漫|动画|国漫|剧场版/i.test(title)) return normalized.animationTarget;
+  const site = String(sourceSite || '').toLowerCase();
+  const siteTarget = normalized.siteMappings?.[site]?.[sourceCategory];
+  if (siteTarget) return siteTarget;
+  if (!site && /动漫|动画|国漫|剧场版/i.test(title)) return normalized.animationTarget;
   const id = categoryId || Object.entries(CATEGORY_MAP).find(([, item]) => item.source === sourceCategory)?.[0];
-  return normalized.mappings[id] || normalized.targets[0];
+  if (id && normalized.mappings[id]) return normalized.mappings[id];
+  return normalized.pendingCategory;
 }
 
 function applyCategoryConfig(articles, config) {
   const normalized = normalizeCategoryConfig(config);
-  for (const article of articles || []) article.category = targetCategory(article.sourceCategory, article.sourceTitle || article.listTitle, normalized, article.categoryId);
+  for (const article of articles || []) {
+    article.sourceSite = article.sourceSite || articleSite(article);
+    article.category = targetCategory(article.sourceCategory, article.sourceTitle || article.listTitle, normalized, article.categoryId, article.sourceSite);
+  }
   return normalized;
 }
 
@@ -138,5 +179,5 @@ function extractArticle(html = '', meta = {}, categoryConfig = DEFAULT_CATEGORY_
 
 module.exports = {
   SITE_ORIGIN, CATEGORY_MAP, DEFAULT_CATEGORY_CONFIG, decodeEntities, stripTags, normalizeXunleiUrl,
-  shareId, cleanTitle, normalizeCategoryConfig, targetCategory, applyCategoryConfig, extractTotalPages, extractListArticles, extractArticle
+  shareId, cleanTitle, normalizeCategoryConfig, targetCategory, applyCategoryConfig, articleSite, extractTotalPages, extractListArticles, extractArticle
 };

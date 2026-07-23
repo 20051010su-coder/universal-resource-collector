@@ -1,5 +1,5 @@
 const crypto = require('node:crypto');
-const { stripTags, cleanTitle } = require('./shared');
+const { stripTags, cleanTitle, targetCategory } = require('./shared');
 
 const DRIVE_HOSTS = {
   'pan.xunlei.com': '迅雷', 'pan.quark.cn': '夸克', 'pan.baidu.com': '百度',
@@ -100,11 +100,26 @@ function detectResourceCategory(html = '', title = '', fallback = '未分类') {
   return rules.find(([, pattern]) => pattern.test(sample))?.[0] || fallback;
 }
 
-function extractGenericArticle(html = '', meta = {}, category = '未分类', linkMode) {
-  const heading = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1] || html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || meta.listTitle || '';
-  const sourceTitle = stripTags(heading).replace(/\s*[-–_|].*$/, '').trim();
-  const detectedCategory = detectResourceCategory(html, sourceTitle, category);
-  return { articleId: String(meta.id || ''), articleUrl: meta.articleUrl || '', sourceTitle, standardTitle: cleanTitle(sourceTitle), sourceCategory: detectedCategory, category: detectedCategory, links: extractDriveLinks(html, linkMode) };
+function extractWebsiteCategory(html = '') {
+  const candidates = [
+    ...String(html).matchAll(/<a\b[^>]*(?:rel=["']category tag["']|class=["'][^"']*(?:category|cat-link)[^"']*["'])[^>]*>([\s\S]*?)<\/a>/gi),
+    ...String(html).matchAll(/<(?:span|div)\b[^>]*class=["'][^"']*(?:breadcrumb|category|cat-name)[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|div)>/gi)
+  ].map(match => stripTags(match[1])).filter(text => text && text.length <= 30 && !/首页|当前位置|分类/.test(text));
+  return candidates[0] || '';
 }
 
-module.exports = { DRIVE_HOSTS, SPEED_PROFILES, PRESET_RULES, normalizeStartUrl, driveType, normalizeDriveUrl, extractDriveLinks, extractGenericList, extractNextPage, detectResourceCategory, extractGenericArticle };
+function extractGenericArticle(html = '', meta = {}, category = '未分类', linkMode, categoryConfig) {
+  const heading = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1] || html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || meta.listTitle || '';
+  const sourceTitle = stripTags(heading).replace(/\s*[-–_|].*$/, '').trim();
+  const sourceCategory = extractWebsiteCategory(html) || detectResourceCategory(html, sourceTitle, category);
+  let sourceSite = '';
+  try { sourceSite = new URL(meta.articleUrl || '').hostname.toLowerCase(); } catch {}
+  return {
+    articleId: String(meta.id || ''), articleUrl: meta.articleUrl || '', sourceTitle, standardTitle: cleanTitle(sourceTitle),
+    sourceSite, sourceCategory,
+    category: targetCategory(sourceCategory, sourceTitle, categoryConfig, '', sourceSite),
+    links: extractDriveLinks(html, linkMode)
+  };
+}
+
+module.exports = { DRIVE_HOSTS, SPEED_PROFILES, PRESET_RULES, normalizeStartUrl, driveType, normalizeDriveUrl, extractDriveLinks, extractGenericList, extractNextPage, detectResourceCategory, extractWebsiteCategory, extractGenericArticle };
