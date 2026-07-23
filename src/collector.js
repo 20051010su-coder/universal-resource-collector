@@ -5,20 +5,40 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
+function retryDelayMs(response, attempt) {
+  const retryAfter = response?.headers?.get?.('retry-after');
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds)) return Math.max(1000, seconds * 1000);
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) return Math.max(1000, retryAt - Date.now());
+  }
+  return Math.min(30000, 3000 * (2 ** (attempt - 1)));
+}
+
 async function fetchText(url, attempts = 3, timeoutMs = 25000) {
   let lastError;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+  let maxAttempts = Math.max(1, attempts);
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT, Accept: 'text/html' }, signal: controller.signal });
       clearTimeout(timer);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        const error = new Error(`HTTP ${response.status}`);
+        error.response = response;
+        throw error;
+      }
       const bytes = Buffer.from(await response.arrayBuffer());
       return bytes.toString('utf8');
     } catch (error) {
       lastError = error;
-      if (attempt < attempts) await sleep(attempt * 1200);
+      if (error.response?.status === 429) maxAttempts = Math.max(maxAttempts, 4);
+      if (attempt < maxAttempts) {
+        const limited = error.response?.status === 429;
+        await sleep(limited ? retryDelayMs(error.response, attempt) : attempt * 1200);
+      }
     }
   }
   throw new Error(lastError?.message || '网页请求失败');
@@ -129,4 +149,4 @@ class Collector {
   retryFailed() { this.state.articles.filter(item => item.status === 'failed').forEach(item => { item.status = 'waiting'; item.error = ''; }); this.recalculate(); this.save(); this.emit(); }
 }
 
-module.exports = { Collector, fetchText };
+module.exports = { Collector, fetchText, retryDelayMs };

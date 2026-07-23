@@ -1,6 +1,6 @@
 {
   "name": "universal-resource-collector",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "公开网页文章与多网盘链接整理工具",
   "main": "src/main.js",
   "author": "20051010su-coder",
