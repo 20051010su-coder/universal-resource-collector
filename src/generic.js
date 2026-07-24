@@ -14,7 +14,21 @@ const SPEED_PROFILES = {
 };
 
 const PRESET_RULES = {
-  'dyyjv.com': { name: '电影云集', listSelector: 'article, .posts-item, .post-item', detailLinkSelector: 'h2 a, h3 a, a[href$=".html"]', titleSelector: 'h1', contentSelector: 'article, .entry-content, .article-content, main', pageSelector: 'a.next, .next-page a, a[rel="next"]' },
+  'dyyjv.com': {
+    name: '电影云集',
+    listItemClass: 'post-item',
+    categoryFeeds: [
+      ['电影', 'https://dyyjv.com/category/dianying'],
+      ['剧集', 'https://dyyjv.com/category/%E5%89%A7%E9%9B%86'],
+      ['短剧', 'https://dyyjv.com/category/%E7%9F%AD%E5%89%A7'],
+      ['动漫', 'https://dyyjv.com/category/dongman'],
+      ['综艺', 'https://dyyjv.com/category/zongyi'],
+      ['读物', 'https://dyyjv.com/category/%E8%AF%BB%E7%89%A9'],
+      ['音频', 'https://dyyjv.com/category/%E9%9F%B3%E9%A2%91'],
+      ['学习', 'https://dyyjv.com/category/xuexi'],
+      ['游戏', 'https://dyyjv.com/category/%E6%B8%B8%E6%88%8F']
+    ].map(([source, url]) => ({ source, url, pagePattern: '{base}/page/{page}' }))
+  },
   'www.uvwhd.com': { name: '高清电影网', legacy: 'uvwhd' },
   'uvwhd.com': { name: '高清电影网', legacy: 'uvwhd' }
 };
@@ -64,7 +78,14 @@ function absolutize(href, base) { try { const u = new URL(href, base); u.hash = 
 function extractGenericList(html = '', baseUrl = '', rule = null) {
   const origin = new URL(baseUrl).origin;
   const seen = new Set(); const items = [];
-  const anchors = [...String(html).matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+  let fragments = [String(html)];
+  if (rule?.listItemClass) {
+    const escaped = String(rule.listItemClass).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const itemPattern = new RegExp(`<article\\b[^>]*class=["'][^"']*\\b${escaped}\\b[^"']*["'][^>]*>[\\s\\S]*?<\\/article>`, 'gi');
+    const matched = [...String(html).matchAll(itemPattern)].map(match => match[0]);
+    if (matched.length) fragments = matched;
+  }
+  const anchors = fragments.flatMap(fragment => [...fragment.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)]);
   for (const match of anchors) {
     const url = absolutize(match[1], baseUrl); const title = stripTags(match[2]);
     if (!url || !url.startsWith(origin) || title.length < 2 || /登录|注册|首页|下一页|上一页|更多|分类|标签/.test(title)) continue;
@@ -102,6 +123,7 @@ function detectResourceCategory(html = '', title = '', fallback = '未分类') {
 
 function extractWebsiteCategory(html = '') {
   const candidates = [
+    ...String(html).matchAll(/<(?:span|div)\b[^>]*class=["'][^"']*meta-cat[^"']*["'][^>]*>[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/(?:span|div)>/gi),
     ...String(html).matchAll(/<a\b[^>]*(?:rel=["']category tag["']|class=["'][^"']*(?:category|cat-link)[^"']*["'])[^>]*>([\s\S]*?)<\/a>/gi),
     ...String(html).matchAll(/<(?:span|div)\b[^>]*class=["'][^"']*(?:breadcrumb|category|cat-name)[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|div)>/gi)
   ].map(match => stripTags(match[1])).filter(text => text && text.length <= 30 && !/首页|当前位置|分类/.test(text));

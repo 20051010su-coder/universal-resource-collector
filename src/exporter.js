@@ -43,12 +43,12 @@ async function exportMaster(state, filePath) {
     ['drive_type', '网盘类型', 14],
     ['article_id', '文章编号', 12], ['standard_title', '标准资源名', 30], ['source_title', '来源文章标题', 45],
     ['source_category', '来源栏目', 14], ['category', '藏知库分类', 18], ['variant', '版本/清晰度', 26],
-    ['original_url', '原迅雷链接', 54], ['original_access_code', '原提取码', 12], ['source_article_url', '来源文章', 48], ['collected_at', '采集时间', 22]
+    ['original_url', '原始网盘链接', 54], ['original_access_code', '原提取码', 12], ['source_article_url', '来源文章', 48], ['collected_at', '采集时间', 22]
   ].map(([key, header, width]) => ({ key, header, width }));
   flatRows(state).forEach(row => sheet.addRow(row)); styleSheet(sheet);
   const review = book.addWorksheet('人工复核');
   review.columns = [{ header: '文章编号', key: 'id', width: 12 }, { header: '标题', key: 'title', width: 50 }, { header: '状态', key: 'status', width: 14 }, { header: '原因', key: 'error', width: 40 }, { header: '文章地址', key: 'url', width: 50 }];
-  (state.articles || []).filter(item => item.status !== 'success' || !item.standardTitle).forEach(item => review.addRow({ id: item.id, title: item.sourceTitle || item.listTitle, status: item.status, error: item.error || (item.status === 'no_links' ? '未找到主迅雷链接' : ''), url: item.articleUrl }));
+  (state.articles || []).filter(item => item.status !== 'success' || !item.standardTitle).forEach(item => review.addRow({ id: item.id, title: item.sourceTitle || item.listTitle, status: item.status, error: item.error || (item.status === 'no_links' ? '未找到资源链接' : ''), url: item.articleUrl }));
   styleSheet(review); await book.xlsx.writeFile(filePath); return flatRows(state).length;
 }
 

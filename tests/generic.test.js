@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeStartUrl, extractDriveLinks, extractGenericList, extractNextPage, detectResourceCategory, extractWebsiteCategory, extractGenericArticle } = require('../src/generic');
+const { PRESET_RULES, normalizeStartUrl, extractDriveLinks, extractGenericList, extractNextPage, detectResourceCategory, extractWebsiteCategory, extractGenericArticle } = require('../src/generic');
 
 test('通用网址规范化', () => {
   assert.equal(normalizeStartUrl('dyyjv.com'), 'https://dyyjv.com/');
@@ -31,4 +31,18 @@ test('优先读取网站栏目并按站点独立映射', () => {
   const article = extractGenericArticle(html, { id: '2', articleUrl: 'https://dyyjv.com/2.html' }, '未分类', { type: 'all' }, config);
   assert.equal(article.sourceCategory, '电视剧');
   assert.equal(article.category, '电视剧');
+});
+
+test('dyyjv 预置九个大分类并只读取栏目文章卡片', () => {
+  assert.deepEqual(PRESET_RULES['dyyjv.com'].categoryFeeds.map(item => item.source), ['电影', '剧集', '短剧', '动漫', '综艺', '读物', '音频', '学习', '游戏']);
+  const html = `
+    <article class="post-item item-grid"><h2><a href="/100.html">栏目文章</a></h2></article>
+    <article class="ranking-item"><h3><a href="/200.html">排行榜文章</a></h3></article>`;
+  const rows = extractGenericList(html, 'https://dyyjv.com/category/dianying', PRESET_RULES['dyyjv.com']);
+  assert.deepEqual(rows.map(item => item.articleUrl), ['https://dyyjv.com/100.html']);
+});
+
+test('识别 dyyjv 详情页 meta-cat 栏目', () => {
+  const html = '<span class="meta-cat-dot"><i></i><a href="/category/%e7%9f%ad%e5%89%a7">短剧</a></span>';
+  assert.equal(extractWebsiteCategory(html), '短剧');
 });

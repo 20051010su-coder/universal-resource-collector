@@ -15,6 +15,10 @@ function categoryOptions(targets, selected, allowPending = false) {
 
 function discoveredSiteCategories(state) {
   const result = new Map();
+  for (const category of Object.values(state.categories || {})) {
+    if (!category.sourceSite || !category.source) continue;
+    result.set(`${category.sourceSite}\n${category.source}`, { site: category.sourceSite, source: category.source });
+  }
   for (const article of state.articles || []) {
     if (!article.sourceCategory || article.categoryId) continue;
     let site = article.sourceSite || '';
@@ -44,7 +48,7 @@ function renderCategoryConfig(state, force = false) {
 function render(state) {
   current = state; const stats = state.stats || {};
   $('statusTitle').textContent = labels[state.status] || state.status;
-  $('statusDetail').textContent = state.status === 'running' ? (state.discoveryComplete ? '栏目扫描完成，正在逐篇获取主迅雷链接。' : '正在遍历栏目和全部分页。') : state.status === 'completed' ? `已整理 ${stats.links || 0} 条唯一迅雷链接，可以导出。` : '支持暂停和关闭后继续，已完成记录不会重复请求。';
+  $('statusDetail').textContent = state.status === 'running' ? (state.discoveryComplete ? '栏目扫描完成，正在逐篇获取资源链接。' : '正在遍历栏目和全部分页。') : state.status === 'completed' ? `已整理 ${stats.links || 0} 条唯一资源链接，可以导出。` : '支持暂停和关闭后继续，已完成记录不会重复请求。';
   ['discovered', 'completed', 'withLinks', 'links', 'noLinks', 'failed'].forEach(key => { $(key).textContent = stats[key] || 0; });
   $('start').disabled = state.status === 'running'; $('pause').disabled = state.status !== 'running'; $('stop').disabled = !['running', 'paused'].includes(state.status); $('retry').disabled = !(stats.failed > 0);
   $('articleDelay').value = state.settings.articleDelayMs; $('listDelay').value = state.settings.listDelayMs; $('lastError').textContent = state.lastError ? `最近错误：${state.lastError}` : '';

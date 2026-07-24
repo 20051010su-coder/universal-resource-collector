@@ -1,9 +1,14 @@
-const { CATEGORY_MAP, extractTotalPages, extractListArticles, extractArticle } = require('./shared');
-const { SPEED_PROFILES, normalizeStartUrl, extractGenericList, extractNextPage, extractGenericArticle } = require('./generic');
+const { CATEGORY_MAP, extractTotalPages, extractListArticles, extractArticle, targetCategory } = require('./shared');
+const { SPEED_PROFILES, PRESET_RULES, normalizeStartUrl, extractGenericList, extractNextPage, extractGenericArticle } = require('./generic');
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/138 Safari/537.36';
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+function feedPageUrl(feed, page) {
+  if (page <= 1 || !feed.pagePattern) return feed.url;
+  return feed.pagePattern.replace('{base}', feed.url.replace(/\/+$/, '')).replace('{page}', String(page));
+}
 
 function retryDelayMs(response, attempt) {
   const retryAfter = response?.headers?.get?.('retry-after');
@@ -80,23 +85,56 @@ class Collector {
 
   async discoverGeneric() {
     const task = this.state.task || {};
-    let pageUrl = normalizeStartUrl(task.startUrl); let page = 0;
+    const startUrl = normalizeStartUrl(task.startUrl);
+    const hostname = new URL(startUrl).hostname.toLowerCase();
+    const presetRule = PRESET_RULES[hostname] || {};
+    const hostRule = { ...presetRule, ...(this.state.siteRules?.[hostname] || {}) };
+    const feeds = hostRule.categoryFeeds?.length
+      ? hostRule.categoryFeeds
+      : [{ source: task.sourceCategory || hostname, url: startUrl }];
     const visited = new Set(); const articleMap = new Map((this.state.articles || []).map(item => [item.articleUrl, item]));
     const profile = { ...SPEED_PROFILES[task.speedMode || 'stable'], ...(task.speedMode === 'custom' ? this.state.settings : {}) };
-    while (pageUrl && !visited.has(pageUrl) && page < (Number(task.maxPages) || 10000)) {
-      await this.waitWhilePaused(); if (this.stopRequested) return;
-      visited.add(pageUrl); page += 1;
-      const html = await fetchText(pageUrl, profile.retries, profile.timeoutMs);
-      const hostRule = this.state.siteRules?.[new URL(pageUrl).hostname];
-      for (const article of extractGenericList(html, pageUrl, hostRule)) if (!articleMap.has(article.articleUrl)) articleMap.set(article.articleUrl, { ...article, status: 'waiting', error: '', attempts: 0, sourceCategory: task.sourceCategory || new URL(task.startUrl).hostname });
-      this.state.articles = [...articleMap.values()]; this.state.stats.discovered = this.state.articles.length;
-      this.state.categories.generic = { source: task.sourceCategory || new URL(task.startUrl).hostname, totalPages: '?', scannedPages: page };
-      this.save(); this.emit(); pageUrl = extractNextPage(html, pageUrl);
-      // 大型站点不能等几千个列表页全部扫描完再处理详情。
-      // 每发现一页就立即消化一批等待文章，界面会很快出现链接并保留断点。
-      const pendingBatch = this.state.articles.filter(item => !['success', 'no_links'].includes(item.status)).slice(0, Math.max(40, (profile.concurrency || 1) * 10));
-      if (pendingBatch.length) await this.collectArticles(pendingBatch);
-      if (profile.listDelayMs) await sleep(profile.listDelayMs);
+    for (const feed of feeds) {
+      const categoryKey = hostRule.categoryFeeds?.length ? `${hostname}:${feed.source}` : 'generic';
+      this.state.categories[categoryKey] ||= { source: feed.source, sourceSite: hostname, totalPages: '?', scannedPages: 0, complete: false };
+    }
+    this.save(); this.emit();
+    for (const feed of feeds) {
+      const categoryKey = hostRule.categoryFeeds?.length ? `${hostname}:${feed.source}` : 'generic';
+      const progress = this.state.categories[categoryKey] || { source: feed.source, sourceSite: hostname, totalPages: '?', scannedPages: 0, complete: false };
+      this.state.categories[categoryKey] = progress;
+      this.save(); this.emit();
+      if (progress.complete) continue;
+      let page = Number(progress.scannedPages) || 0;
+      let pageUrl = feedPageUrl(feed, page + 1);
+      visited.clear();
+      while (pageUrl && !visited.has(pageUrl) && page < (Number(task.maxPages) || 10000)) {
+        await this.waitWhilePaused(); if (this.stopRequested) return;
+        visited.add(pageUrl); page += 1;
+        const html = await fetchText(pageUrl, profile.retries, profile.timeoutMs);
+        for (const article of extractGenericList(html, pageUrl, hostRule)) {
+          const existing = articleMap.get(article.articleUrl);
+          if (!existing) {
+            articleMap.set(article.articleUrl, { ...article, status: 'waiting', error: '', attempts: 0, sourceSite: hostname, sourceCategory: feed.source });
+          } else if (!existing.sourceCategory || ['未分类', hostname, 'dyyjv.com'].includes(existing.sourceCategory)) {
+            existing.sourceSite = hostname;
+            existing.sourceCategory = feed.source;
+            existing.category = targetCategory(feed.source, existing.sourceTitle || existing.listTitle, this.state.categoryConfig, '', hostname);
+          }
+        }
+        this.state.articles = [...articleMap.values()]; this.state.stats.discovered = this.state.articles.length;
+        Object.assign(progress, { source: feed.source, sourceSite: hostname, scannedPages: page });
+        this.save(); this.emit();
+        const nextPage = extractNextPage(html, pageUrl);
+        pageUrl = nextPage && !visited.has(nextPage) ? nextPage : '';
+        const pendingBatch = this.state.articles
+          .filter(item => ['waiting', 'running'].includes(item.status))
+          .slice(0, Math.max(40, (profile.concurrency || 1) * 10));
+        if (pendingBatch.length) await this.collectArticles(pendingBatch);
+        if (profile.listDelayMs) await sleep(profile.listDelayMs);
+      }
+      Object.assign(progress, { complete: true, totalPages: page });
+      this.save(); this.emit();
     }
     this.state.discoveryComplete = true; this.save(); this.emit();
   }
@@ -104,7 +142,7 @@ class Collector {
   async collectArticles(articleSource = this.state.articles) {
     const generic = this.state.task?.mode === 'generic';
     const profile = generic ? { ...SPEED_PROFILES[this.state.task.speedMode || 'stable'], ...(this.state.task.speedMode === 'custom' ? this.state.settings : {}) } : { concurrency: 1, articleDelayMs: this.state.settings.articleDelayMs, retries: 3, timeoutMs: 25000 };
-    const queue = articleSource.filter(article => !['success', 'no_links'].includes(article.status));
+    const queue = articleSource.filter(article => ['waiting', 'running'].includes(article.status));
     let cursor = 0;
     const worker = async () => { while (cursor < queue.length && !this.stopRequested) {
       const article = queue[cursor++]; await this.waitWhilePaused(); if (this.stopRequested) return;
@@ -114,6 +152,31 @@ class Collector {
       this.recalculate(); this.save(); this.emit(); if (profile.articleDelayMs) await sleep(profile.articleDelayMs);
     }};
     await Promise.all(Array.from({ length: Math.max(1, Math.min(20, profile.concurrency || 1)) }, worker));
+  }
+
+  prepareCategoryRefresh() {
+    let changed = false;
+    let taskHostname = '';
+    try { taskHostname = new URL(normalizeStartUrl(this.state.task?.startUrl)).hostname.toLowerCase(); } catch {}
+    if (taskHostname === 'dyyjv.com' && !Object.keys(this.state.categories || {}).some(key => key.startsWith('dyyjv.com:'))) {
+      if (this.state.categories?.generic?.source === 'dyyjv.com') delete this.state.categories.generic;
+      this.state.discoveryComplete = false;
+      changed = true;
+    }
+    for (const article of this.state.articles || []) {
+      let hostname = article.sourceSite || '';
+      try { hostname ||= new URL(article.articleUrl).hostname.toLowerCase(); } catch {}
+      if (hostname !== 'dyyjv.com' || !['', '未分类', 'dyyjv.com'].includes(article.sourceCategory || '')) continue;
+      article.sourceSite = hostname;
+      article.status = 'waiting';
+      article.error = '';
+      changed = true;
+    }
+    if (changed) {
+      this.recalculate();
+      this.save();
+      this.emit();
+    }
   }
 
   recalculate() {
@@ -134,6 +197,7 @@ class Collector {
     if (this.state.status === 'running') return;
     this.stopRequested = false; this.state.status = 'running'; this.state.lastError = ''; this.save(); this.emit();
     try {
+      this.prepareCategoryRefresh();
       if (!this.state.discoveryComplete) await this.discover();
       if (!this.stopRequested) await this.collectArticles();
       if (!this.stopRequested) this.state.status = 'completed';
@@ -149,4 +213,4 @@ class Collector {
   retryFailed() { this.state.articles.filter(item => item.status === 'failed').forEach(item => { item.status = 'waiting'; item.error = ''; }); this.recalculate(); this.save(); this.emit(); }
 }
 
-module.exports = { Collector, fetchText, retryDelayMs };
+module.exports = { Collector, fetchText, retryDelayMs, feedPageUrl };
